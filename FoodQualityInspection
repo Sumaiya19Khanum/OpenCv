@@ -1,0 +1,106 @@
+import cv2
+import numpy as np
+
+def extract_color_histogram(image, bins=(8, 8, 8)):
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    hist = cv2.calcHist([hsv], [0, 1, 2], None, bins, [0, 180, 0, 256, 0, 256])
+    cv2.normalize(hist, hist)
+    return hist.flatten()
+
+def extract_texture_features(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    features = cv2.calcHist([gray], [0], None, [256], [0, 256])
+    cv2.normalize(features, features)
+    return features.flatten()
+
+import os
+
+def load_images_and_labels(dataset_path):
+    X = []
+    y = []
+    for label in os.listdir(dataset_path):
+        label_path = os.path.join(dataset_path, label)
+        if os.path.isdir(label_path):
+            for image_name in os.listdir(label_path):
+                image_path = os.path.join(label_path, image_name)
+                image = cv2.imread(image_path)
+                if image is None:
+                    continue
+                color_hist = extract_color_histogram(image)
+                texture_features = extract_texture_features(image)
+                features = np.concatenate([color_hist, texture_features])
+                X.append(features)
+                y.append(label)
+    return X, y
+from google.colab import files
+uploaded = files.upload()
+import zipfile
+import io
+zip_file_path = 'FoodIdentification.zip'
+with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+    zip_ref.extractall('data/')
+
+dataset_path = 'data/FoodIdentification'
+X, y = load_images_and_labels(dataset_path)
+print(f"Loaded {len(X)} images.")
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+import joblib
+
+X = np.array(X)
+y = np.array(y)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+label_encoder = LabelEncoder()
+y_train = label_encoder.fit_transform(y_train)
+y_test = label_encoder.transform(y_test)
+
+model = SVC()
+model.fit(X_train, y_train)
+
+joblib.dump(model, 'food_quality_model.pkl')
+
+from sklearn.metrics import confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+print("Accuracy:", accuracy)
+
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, cmap='Blues', fmt='g', xticklabels=label_encoder.classes_, yticklabels=label_encoder.classes_)
+plt.xlabel('Predicted labels')
+plt.ylabel('True labels')
+plt.title('Confusion Matrix')
+plt.show()
+
+import matplotlib.pyplot as plt
+
+def predict_image_quality(image_path):
+    image = cv2.imread(image_path)
+    if image is None:
+        raise ValueError(f"Image at path {image_path} could not be loaded.")
+
+    color_hist = extract_color_histogram(image)
+    texture_features = extract_texture_features(image)
+    features = np.concatenate([color_hist, texture_features]).reshape(1, -1)
+
+    model = joblib.load('food_quality_model.pkl')
+    prediction = model.predict(features)
+    label = label_encoder.inverse_transform(prediction)[0]
+    print(f"The model predicts that the image is of {label}.")
+
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    plt.imshow(image_rgb)
+    plt.title(f'Predicted: {label}')
+    plt.axis('off')
+    plt.show()
+
+new_image_path = 'test2.png' #Add the image you want to check quality of#
+predict_image_quality(new_image_path)
